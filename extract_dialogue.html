@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本文抽出 — 演劇テキスト整形ツール</title>
+<style>
+  :root{
+    --paper:      #ECE6D6;
+    --paper-dim:  #E2DAC5;
+    --ink:        #20242C;
+    --ink-dim:    #5B5A4E;
+    --rule:       #C9BFA0;
+    --oxblood:    #7A2E2E;
+    --oxblood-d:  #5E2222;
+    --sage:       #46594F;
+    --sage-d:     #33443C;
+    --paper-panel:#F5F1E4;
+    --mono: "IBM Plex Mono", "Menlo", "Consolas", monospace;
+    --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  }
+  @font-face{
+    font-family:"IBM Plex Mono";
+    src: local("IBM Plex Mono");
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+  ::selection{ background: var(--oxblood); color: var(--paper); }
+
+  a{ color: var(--oxblood); }
+
+  .titlepage{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 40px 32px 18px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .titlepage .eyebrow{
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  .titlepage h1{
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 34px;
+    margin: 0 0 6px;
+    letter-spacing: .01em;
+  }
+  .titlepage p.sub{
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--ink-dim);
+    margin: 0;
+    font-size: 15px;
+  }
+
+  .layout{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 26px 32px 60px;
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 26px;
+    align-items: start;
+  }
+  @media (max-width: 900px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+
+  .card{
+    background: var(--paper-panel);
+    border: 1px solid var(--rule);
+    position: relative;
+  }
+  .card::before{
+    content:"";
+    position:absolute; top:0; left:0; right:0; height:3px;
+    background: repeating-linear-gradient(90deg, var(--rule) 0 6px, transparent 6px 12px);
+    opacity:.6;
+  }
+  .card + .card{ margin-top: 20px; }
+  .card h2{
+    font-family: var(--serif);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--rule);
+    display:flex; align-items:baseline; justify-content:space-between;
+    letter-spacing:.02em;
+  }
+  .card h2 .tag{
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-family: var(--mono);
+    font-weight: 400;
+  }
+  .card .body{ padding: 14px 16px 16px; }
+
+  /* --- Drop zone --- */
+  #dropzone{
+    border: 1.5px dashed var(--ink-dim);
+    background: repeating-linear-gradient(135deg, rgba(122,46,46,0.02) 0 10px, rgba(122,46,46,0.045) 10px 20px);
+    padding: 26px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  #dropzone:hover, #dropzone.drag{
+    border-color: var(--oxblood);
+    background: rgba(122,46,46,0.07);
+  }
+  #dropzone .glyph{
+    font-family: var(--serif);
+    font-size: 26px;
+    color: var(--oxblood);
+    display:block;
+    margin-bottom: 6px;
+  }
+  #dropzone .msg{ font-size: 12.5px; color: var(--ink-dim); }
+  #dropzone .fname{
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-weight: 600;
+    word-break: break-all;
+  }
+  #fileInput{ display:none; }
+
+  label.field-label{
+    display:block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--ink-dim);
+    margin: 14px 0 6px;
+  }
+  label.field-label:first-child{ margin-top:0; }
+
+  select{
+    width:100%;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    padding: 7px 8px;
+  }
+
+  /* --- Options list --- */
+  .opt-list{ list-style:none; margin:0; padding:0; }
+  .opt-list li{
+    display:flex; align-items:center; gap:10px;
+    padding: 7px 0;
+    border-bottom: 1px dotted var(--rule);
+    font-size: 12.5px;
+  }
+  .opt-list li:last-child{ border-bottom:none; }
+  .opt-list input[type=checkbox]{
+    appearance:none; -webkit-appearance:none;
+    width:16px; height:16px;
+    border:1.5px solid var(--ink-dim);
+    background: var(--paper);
+    position: relative;
+    cursor:pointer;
+    flex: none;
+  }
+  .opt-list input[type=checkbox]:checked{
+    background: var(--oxblood);
+    border-color: var(--oxblood-d);
+  }
+  .opt-list input[type=checkbox]:checked::after{
+    content:"✓";
+    position:absolute; top:-3px; left:2px;
+    color: var(--paper);
+    font-size: 12px;
+  }
+  .opt-list label{ cursor:pointer; flex:1; }
+  .opt-list .hint{
+    display:block;
+    color: var(--ink-dim);
+    font-size: 10.5px;
+    margin-top: 1px;
+  }
+
+  textarea{
+    width:100%;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    padding: 10px;
+    resize: vertical;
+  }
+  #castList{ height: 120px; }
+  #castList::placeholder{ color:#9d9686; }
+
+  button{
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: .03em;
+    cursor:pointer;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 9px 16px;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  button:hover{ background: var(--oxblood); border-color: var(--oxblood-d); }
+  button.secondary{
+    background: transparent; color: var(--ink); border-color: var(--ink-dim);
+  }
+  button.secondary:hover{ background: var(--ink); color: var(--paper); }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+
+  .run-row{ display:flex; gap:10px; margin-top:16px; }
+  .run-row button{ flex:1; }
+
+  /* --- Right column / tabs --- */
+  .tabs{ display:flex; border-bottom: 1px solid var(--rule); }
+  .tabs button.tabbtn{
+    background:none; border:none; color: var(--ink-dim);
+    padding: 10px 16px; font-family: var(--serif); font-size: 13.5px;
+    border-bottom: 2px solid transparent;
+    margin-bottom:-1px;
+  }
+  .tabs button.tabbtn.active{ color: var(--oxblood); border-bottom-color: var(--oxblood); }
+  .tabs button.tabbtn:hover{ background: rgba(122,46,46,0.05); }
+
+  .tabpanel{ display:none; }
+  .tabpanel.active{ display:block; }
+
+  #outputArea, #logArea{
+    height: 560px;
+    white-space: pre-wrap;
+    overflow:auto;
+  }
+  #logArea{ font-size: 11.5px; line-height:1.5; }
+  .logline{ display:flex; gap:8px; }
+  .logline .lg-tag{
+    flex: none; width: 190px;
+    color: var(--sage-d);
+    font-weight: 600;
+  }
+  .logline.dropped .lg-tag{ color: var(--ink-dim); }
+  .logline.dropped .lg-text{ color:#8d8676; text-decoration: line-through; text-decoration-color:#b9b19b; }
+  .logline .lg-text{ white-space: pre; }
+
+  .toolbar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-panel);
+  }
+  .toolbar select, .toolbar input[type=text]{
+    width:auto; flex:none;
+  }
+  .toolbar .spacer{ flex:1; }
+  .status{
+    font-size: 11.5px; color: var(--ink-dim);
+  }
+  .status.err{ color: var(--oxblood); }
+
+  .empty-state{
+    padding: 60px 20px; text-align:center; color: var(--ink-dim);
+  }
+  .empty-state .glyph{ font-family: var(--serif); font-size:28px; color: var(--rule); }
+
+  /* --- Language switch --- */
+  .titlepage-row{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+  }
+  .lang-switch{
+    display:flex; border:1px solid var(--ink-dim); flex: none;
+    margin-top: 2px;
+  }
+  .lang-switch button{
+    background: transparent; border:none; color: var(--ink-dim);
+    font-family: var(--mono); font-size: 11px; letter-spacing:.06em;
+    padding: 6px 12px; cursor:pointer;
+  }
+  .lang-switch button + button{ border-left: 1px solid var(--ink-dim); }
+  .lang-switch button.active{ background: var(--ink); color: var(--paper); }
+  .lang-switch button:hover:not(.active){ background: rgba(122,46,46,0.08); color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="titlepage">
+  <div class="titlepage-row">
+    <div>
+      <div class="eyebrow">Dialogue Extractor</div>
+      <h1 data-i18n="title">本文抽出ツール</h1>
+      <p class="sub" data-i18n="subtitle">英語演劇テキストから、台詞の本文だけを取り出す。</p>
+    </div>
+    <div class="lang-switch" id="langSwitch">
+      <button type="button" data-lang="ja" class="active">日本語</button>
+      <button type="button" data-lang="en">English</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT COLUMN: input & options -->
+  <div class="left">
+
+    <div class="card">
+      <h2><span data-i18n="cardInputTitle">入力ファイル</span> <span class="tag" data-i18n="cardInputTag">1件のみ</span></h2>
+      <div class="body">
+        <div id="dropzone">
+          <span class="glyph">✎</span>
+          <span class="msg" data-i18n-html="dropMsg">ここに .txt ファイルをドラッグ&amp;ドロップ<br>またはクリックして選択</span>
+          <div class="fname" id="fname"></div>
+        </div>
+        <input type="file" id="fileInput" accept=".txt,text/plain">
+
+        <label class="field-label" data-i18n="encodingLabel">文字エンコード（入力）</label>
+        <select id="encodingSelect">
+          <option value="utf-8">UTF-8</option>
+          <option value="shift_jis">Shift_JIS</option>
+          <option value="euc-jp">EUC-JP</option>
+          <option value="iso-2022-jp">ISO-2022-JP</option>
+          <option value="utf-16le">UTF-16LE</option>
+          <option value="utf-16be">UTF-16BE</option>
+          <option value="windows-1252">Windows-1252 (Latin-1)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="cardOptionsTitle">オプション</h2>
+      <div class="body">
+        <ul class="opt-list">
+          <li>
+            <input type="checkbox" id="optSpeaker" checked>
+            <label for="optSpeaker"><span data-i18n="optSpeakerLabel">台詞の人物名を削除</span>
+              <span class="hint" data-i18n="optSpeakerHint">例: "ROBESPIERRE." のような話者名の行</span>
+            </label>
+          </li>
+          <li>
+            <input type="checkbox" id="optStage" checked>
+            <label for="optStage"><span data-i18n="optStageLabel">ト書きを削除</span>
+              <span class="hint" data-i18n="optStageHint">[...] (...) や Enter/Exit/Exeunt で始まる行（複数行も対応）</span>
+            </label>
+          </li>
+          <li>
+            <input type="checkbox" id="optLineNum" checked>
+            <label for="optLineNum"><span data-i18n="optLineNumLabel">行番号を削除</span>
+              <span class="hint" data-i18n="optLineNumHint">行頭の数字（例: "12  Speech..." "[250]  Speech..."）</span>
+            </label>
+          </li>
+          <li>
+            <input type="checkbox" id="optBlank">
+            <label for="optBlank"><span data-i18n="optBlankLabel">空行を削除</span>
+              <span class="hint" data-i18n="optBlankHint">段落区切りの空行も含めて完全に除去</span>
+            </label>
+          </li>
+          <li>
+            <input type="checkbox" id="optDebug">
+            <label for="optDebug"><span data-i18n="optDebugLabel">デバッグ（判定ログを表示）</span>
+              <span class="hint" data-i18n="optDebugHint">各行がどう判定されたかを右側パネルに表示</span>
+            </label>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span data-i18n="cardCastTitle">登場人物表</span> <span class="tag" data-i18n="cardCastTag">任意・人物名削除で使用</span></h2>
+      <div class="body">
+        <textarea id="castList" data-i18n-placeholder="castPlaceholder" placeholder="登場人物名を1行に1つ、または本の記載をそのまま貼り付け可（先頭の名前部分だけを自動で拾います）&#10;例:&#10;Robespierre&#10;St. Just&#10;Couthon, a member of the Committee..."></textarea>
+        <div class="run-row">
+          <button id="runBtn" data-i18n="runBtn">抽出を実行</button>
+          <button class="secondary" id="clearBtn" data-i18n="clearBtn">クリア</button>
+        </div>
+        <div class="status" id="statusMsg" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN: results -->
+  <div class="right">
+    <div class="card">
+      <div class="tabs">
+        <button class="tabbtn active" data-tab="output" data-i18n="tabOutput">抽出結果</button>
+        <button class="tabbtn" data-tab="log" data-i18n="tabLog">判定ログ</button>
+      </div>
+
+      <div class="toolbar">
+        <label style="font-size:11px;color:var(--ink-dim);" data-i18n="outEncodingLabel">出力エンコード</label>
+        <select id="dlEncoding">
+          <option value="utf8">UTF-8</option>
+          <option value="utf8bom" data-i18n="dlOptUtf8Bom">UTF-8（BOM付き）</option>
+        </select>
+        <input type="text" id="dlFilename" value="dialogue_only.txt">
+        <button id="downloadBtn" class="secondary" data-i18n="downloadBtn">ダウンロード</button>
+        <div class="spacer"></div>
+        <span class="status" id="lineCount"></span>
+      </div>
+
+      <div class="tabpanel active" id="panel-output">
+        <div class="empty-state" id="outputEmpty">
+          <div class="glyph">—</div>
+          <div data-i18n="outputEmptyMsg">ファイルをドロップすると、ここに抽出結果が表示されます</div>
+        </div>
+        <textarea id="outputArea" readonly style="display:none;border:none;"></textarea>
+      </div>
+      <div class="tabpanel" id="panel-log">
+        <div class="empty-state" id="logEmpty">
+          <div class="glyph">—</div>
+          <div data-i18n="logEmptyMsg">「デバッグ」を有効にして抽出すると、判定ログが表示されます</div>
+        </div>
+        <div id="logArea" style="display:none;padding:10px 14px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* =========================================================================
+   本文抽出ロジック（Python版 extract_dialogue.py の状態機械を移植）
+   ========================================================================= */
+
+const PAGE_MARKER_RE   = /^\s*\[\s*Page\s+[ivxlcdmIVXLCDM\d]+\s*\]\s*$/i;
+const ACT_SCENE_RE      = /^\s*(ACT|SCENE)\b/i;
+const FINIS_RE          = /^\s*(FINIS|THE\s+END|END\s+OF\s+(THE\s+)?(PLAY|DRAMA|TRAGEDY))\.?\s*$/i;
+const DRAMATIS_HEADER_RE= /^\s*(DRAMATIS\s+PERSONAE|CHARACTERS|PERSONS\s+OF\s+THE\s+(DRAMA|PLAY)|PERSONS\s+REPRESENTED)\s*\.?\s*$/i;
+const BRACKET_ONLY_RE   = /^\s*[\[\(].*[\]\)][.,;:]?\s*$/;
+const BRACKET_OPEN_UNCLOSED_RE = /^\s*\[(?!.*\]).*$/;
+const BRACKET_CLOSE_RE  = /^.*\]\s*$/;
+const ENTRANCE_RE       = /^\s*(Enter|Exit|Exeunt|Manet|Re-enter|Reenter)\b/i;
+// 行頭の行番号（例: "1  Cheerful on..." "12 Something..." "[250]  Something..."）
+// 角括弧で囲まれている場合（[250]）とそうでない場合の両方に対応する。
+const LEADING_NUMBER_RE = /^\s*\[?(\d+)\]?\s+(\S.*)$/;
+const SPEAKER_TOKEN     = "[A-Z][A-Za-z'.]*";
+const SPEAKER_CUE_RE    = new RegExp("^(?:" + SPEAKER_TOKEN + "\\s){0,4}" + SPEAKER_TOKEN + "\\.?\\s*$");
+const SPEAKER_CUE_MAX_LEN = 35;
+
+function parseCastList(text){
+  const names = new Set();
+  text.split(/\r?\n/).forEach(raw => {
+    const s = raw.trim();
+    if (!s) return;
+    // "Name, description" / "Name .... description" / "Name  description" / 単に "Name" のみ
+    const m = s.match(/^([A-Z][A-Za-z .'\-]{1,40}?)(,|\.{2,}|\s{2,}|$)/);
+    if (m){
+      const name = m[1].trim().replace(/\.$/, '');
+      if (name) names.add(name.toUpperCase());
+    } else {
+      names.add(s.toUpperCase().replace(/\.$/, ''));
+    }
+  });
+  return names;
+}
+
+class Extractor{
+  constructor(opts){
+    this.removeSpeaker = opts.removeSpeaker;
+    this.removeStage   = opts.removeStage;
+    this.removeLineNum = opts.removeLineNum;
+    this.removeBlank   = opts.removeBlank;
+    this.knownNames     = opts.knownNames || new Set();
+
+    this.state = 'FRONTMATTER'; // FRONTMATTER -> SCENE_INTRO -> BODY
+    this.inDramatisBlock = false;
+    this.done = false;
+    this.inBracketBlock = false;
+    this.log = [];
+    this.outLines = [];
+  }
+
+  looksLikeSpeaker(line){
+    const s = line.trim();
+    if (!s || s.length > SPEAKER_CUE_MAX_LEN) return false;
+    const key = s.replace(/\.$/, '').trim().toUpperCase();
+    if (this.knownNames.has(key)) return true;
+    return SPEAKER_CUE_RE.test(s);
+  }
+
+  recordDramatisName(line){
+    const s = line.trim();
+    if (!s){ this.inDramatisBlock = false; return; }
+    const m = s.match(/^([A-Z][A-Za-z .'\-]{1,40}?)(,|\.{2,}|\s{2,}|$)/);
+    if (m){
+      const name = m[1].trim().replace(/\.$/, '');
+      if (name) this.knownNames.add(name.toUpperCase());
+    }
+  }
+
+  emitNumbered(m, tag){
+    const number = m[1], rest = m[2];
+    if (this.removeLineNum){
+      return [tag, rest];
+    }
+    return [tag, number + '  ' + rest];
+  }
+
+  pushLog(tag, rawLine, dropped){
+    this.log.push({tag, rawLine, dropped});
+  }
+
+  process(text){
+    const lines = text.split(/\r\n|\r|\n/);
+    for (const rawLine of lines){
+      if (this.done) break;
+      const [tag, content] = this.classify(rawLine);
+      const dropped = (content === null || content === undefined);
+      this.pushLog(tag, rawLine, dropped);
+      if (!dropped) this.outLines.push(content);
+    }
+    if (this.removeBlank){
+      this.outLines = this.outLines.filter(l => l.trim() !== '');
+    }
+    return this.outLines.join('\n') + (this.outLines.length ? '\n' : '');
+  }
+
+  classify(rawLine){
+    const line = rawLine.replace(/\n$/, '');
+    const stripped = line.trim();
+
+    // 複数行にまたがる角括弧ト書きの途中
+    if (this.inBracketBlock){
+      // ページ番号はト書きの途中に紛れ込んでいても常に除去し、ブロックは継続する
+      if (PAGE_MARKER_RE.test(stripped)){
+        return ['PAGE_MARKER(in-multiline)', null];
+      }
+      if (BRACKET_CLOSE_RE.test(stripped)){
+        this.inBracketBlock = false;
+        if (!this.removeStage) return ['STAGE_DIR(multiline-end,kept)', line];
+        return ['STAGE_DIR(multiline-end)', null];
+      }
+      // 安全弁: 閉じ括弧が見つからないまま、行番号付き台詞・ACT/SCENE見出し・
+      // 話者名らしき行・終幕マーカー・空行など「明らかに本文へ戻っている」行に
+      // 出会ったら、閉じ括弧が欠落していたとみなしてブロックを抜け、
+      // この行はそのまま通常の判定ルートで処理し直す（return せず下に続ける）。
+      const isRecoverySignal =
+        LEADING_NUMBER_RE.test(line) ||
+        ACT_SCENE_RE.test(stripped) ||
+        FINIS_RE.test(stripped) ||
+        stripped === '' ||
+        this.looksLikeSpeaker(stripped);
+      if (isRecoverySignal){
+        this.inBracketBlock = false;
+        // fall through — 下の通常ロジックでこの行を再判定する
+      } else {
+        if (!this.removeStage) return ['STAGE_DIR(multiline,kept)', line];
+        return ['STAGE_DIR(multiline)', null];
+      }
+    }
+
+    // 空行
+    if (stripped === ''){
+      if (this.inDramatisBlock) this.inDramatisBlock = false;
+      if (this.state === 'BODY') return ['BLANK', ''];
+      return ['BLANK(skip)', null];
+    }
+
+    // 終幕マーカー
+    if (FINIS_RE.test(stripped)){
+      this.done = true;
+      return ['FINIS', null];
+    }
+
+    // ページ番号
+    if (PAGE_MARKER_RE.test(stripped)) return ['PAGE_MARKER', null];
+
+    // 登場人物一覧ヘッダー
+    if (this.state === 'FRONTMATTER' && DRAMATIS_HEADER_RE.test(stripped)){
+      this.inDramatisBlock = true;
+      return ['DRAMATIS_HEADER', null];
+    }
+    if (this.inDramatisBlock){
+      this.recordDramatisName(line);
+      return ['DRAMATIS_ITEM', null];
+    }
+
+    // ACT/SCENE見出し
+    if (ACT_SCENE_RE.test(stripped)){
+      if (this.state === 'FRONTMATTER'){
+        this.state = 'SCENE_INTRO';
+        return ['FRONTMATTER->SCENE_INTRO', null];
+      } else {
+        this.state = 'SCENE_INTRO';
+        return ['ACT_SCENE(reset)', null];
+      }
+    }
+
+    // ---- FRONTMATTER ----
+    if (this.state === 'FRONTMATTER'){
+      const m = line.match(LEADING_NUMBER_RE);
+      if (m){
+        this.state = 'BODY';
+        return this.emitNumbered(m, 'FRONTMATTER->BODY(num)');
+      }
+      return ['FRONTMATTER', null];
+    }
+
+    // ---- SCENE_INTRO ----
+    if (this.state === 'SCENE_INTRO'){
+      const m = line.match(LEADING_NUMBER_RE);
+      if (m){
+        this.state = 'BODY';
+        return this.emitNumbered(m, 'SCENE_INTRO->BODY(num)');
+      }
+      if (BRACKET_ONLY_RE.test(stripped) || ENTRANCE_RE.test(stripped)){
+        if (!this.removeStage) return ['STAGE_DIR(intro,kept)', line];
+        return ['STAGE_DIR(intro)', null];
+      }
+      if (BRACKET_OPEN_UNCLOSED_RE.test(stripped)){
+        this.inBracketBlock = true;
+        if (!this.removeStage) return ['STAGE_DIR(intro,multiline-start,kept)', line];
+        return ['STAGE_DIR(intro,multiline-start)', null];
+      }
+      if (this.looksLikeSpeaker(stripped)){
+        this.state = 'BODY';
+        if (!this.removeSpeaker) return ['SCENE_INTRO->BODY(speaker,kept)', line];
+        return ['SCENE_INTRO->BODY(speaker)', null];
+      }
+      return ['SCENE_INTRO', null];
+    }
+
+    // ---- BODY ----
+    if (BRACKET_ONLY_RE.test(stripped) || ENTRANCE_RE.test(stripped)){
+      if (!this.removeStage) return ['STAGE_DIR(kept)', line];
+      return ['STAGE_DIR', null];
+    }
+    if (BRACKET_OPEN_UNCLOSED_RE.test(stripped)){
+      this.inBracketBlock = true;
+      if (!this.removeStage) return ['STAGE_DIR(multiline-start,kept)', line];
+      return ['STAGE_DIR(multiline-start)', null];
+    }
+    if (this.looksLikeSpeaker(stripped)){
+      if (!this.removeSpeaker) return ['SPEAKER_NAME(kept)', line];
+      return ['SPEAKER_NAME', null];
+    }
+    const m = line.match(LEADING_NUMBER_RE);
+    if (m) return this.emitNumbered(m, 'DIALOGUE(num)');
+
+    return ['DIALOGUE', line];
+  }
+}
+
+/* =========================================================================
+   UI 配線
+   ========================================================================= */
+
+/* ---- 日本語 / 英語 切り替え ---------------------------------------- */
+
+const TRANSLATIONS = {
+  ja: {
+    docTitle: '本文抽出 — 演劇テキスト整形ツール',
+    title: '本文抽出ツール',
+    subtitle: '英語演劇テキストから、台詞の本文だけを取り出す。',
+    cardInputTitle: '入力ファイル',
+    cardInputTag: '1件のみ',
+    dropMsg: 'ここに .txt ファイルをドラッグ&ドロップ<br>またはクリックして選択',
+    encodingLabel: '文字エンコード（入力）',
+    cardOptionsTitle: 'オプション',
+    optSpeakerLabel: '台詞の人物名を削除',
+    optSpeakerHint: '例: "ROBESPIERRE." のような話者名の行',
+    optStageLabel: 'ト書きを削除',
+    optStageHint: '[...] (...) や Enter/Exit/Exeunt で始まる行（複数行も対応）',
+    optLineNumLabel: '行番号を削除',
+    optLineNumHint: '行頭の数字（例: "12  Speech..." "[250]  Speech..."）',
+    optBlankLabel: '空行を削除',
+    optBlankHint: '段落区切りの空行も含めて完全に除去',
+    optDebugLabel: 'デバッグ（判定ログを表示）',
+    optDebugHint: '各行がどう判定されたかを右側パネルに表示',
+    cardCastTitle: '登場人物表',
+    cardCastTag: '任意・人物名削除で使用',
+    castPlaceholder: '登場人物名を1行に1つ、または本の記載をそのまま貼り付け可（先頭の名前部分だけを自動で拾います）\n例:\nRobespierre\nSt. Just\nCouthon, a member of the Committee...',
+    runBtn: '抽出を実行',
+    clearBtn: 'クリア',
+    tabOutput: '抽出結果',
+    tabLog: '判定ログ',
+    outEncodingLabel: '出力エンコード',
+    dlOptUtf8Bom: 'UTF-8（BOM付き）',
+    downloadBtn: 'ダウンロード',
+    outputEmptyMsg: 'ファイルをドロップすると、ここに抽出結果が表示されます',
+    logEmptyMsg: '「デバッグ」を有効にして抽出すると、判定ログが表示されます',
+    statusLoaded: '読み込み完了: {name}（{kb} KB）',
+    statusDecodeError: '文字コードのデコードに失敗しました: {msg}',
+    statusReadError: 'ファイルの読み込みに失敗しました',
+    statusMultiFile: 'ファイルは1つだけドロップしてください（最初の1件のみ読み込みます）',
+    statusNeedRun: '先に抽出を実行してください（ファイル未読み込み、または結果が空です）',
+    lineCount: '本文 {kept} 行 / 入力 {total} 行',
+  },
+  en: {
+    docTitle: 'Dialogue Extractor — Play Text Formatting Tool',
+    title: 'Dialogue Extractor',
+    subtitle: 'Extract only the spoken dialogue from English play texts.',
+    cardInputTitle: 'Input File',
+    cardInputTag: 'single file only',
+    dropMsg: 'Drag &amp; drop a .txt file here<br>or click to choose one',
+    encodingLabel: 'Character Encoding (Input)',
+    cardOptionsTitle: 'Options',
+    optSpeakerLabel: 'Remove speaker names',
+    optSpeakerHint: 'e.g. lines like "ROBESPIERRE."',
+    optStageLabel: 'Remove stage directions',
+    optStageHint: 'Lines like [...] (...) or starting with Enter/Exit/Exeunt (multi-line supported)',
+    optLineNumLabel: 'Remove line numbers',
+    optLineNumHint: 'Leading numbers (e.g. "12  Speech..." or "[250]  Speech...")',
+    optBlankLabel: 'Remove blank lines',
+    optBlankHint: 'Also strips blank lines used as paragraph breaks',
+    optDebugLabel: 'Debug (show classification log)',
+    optDebugHint: 'Shows how each line was classified, in the panel on the right',
+    cardCastTitle: 'Cast List',
+    cardCastTag: 'optional — used for speaker-name removal',
+    castPlaceholder: 'One character name per line, or paste the book\'s cast list as-is (only the leading name part is picked up automatically)\ne.g.:\nRobespierre\nSt. Just\nCouthon, a member of the Committee...',
+    runBtn: 'Extract',
+    clearBtn: 'Clear',
+    tabOutput: 'Extracted Text',
+    tabLog: 'Classification Log',
+    outEncodingLabel: 'Output Encoding',
+    dlOptUtf8Bom: 'UTF-8 (with BOM)',
+    downloadBtn: 'Download',
+    outputEmptyMsg: 'Drop a file to see the extracted result here',
+    logEmptyMsg: 'Enable "Debug" and run extraction to see the classification log here',
+    statusLoaded: 'Loaded: {name} ({kb} KB)',
+    statusDecodeError: 'Failed to decode the text: {msg}',
+    statusReadError: 'Failed to read the file',
+    statusMultiFile: 'Please drop only one file (only the first one will be loaded)',
+    statusNeedRun: 'Please run extraction first (no file loaded, or the result is empty)',
+    lineCount: '{kept} dialogue lines / {total} input lines',
+  },
+};
+
+let currentLang = 'ja';
+
+function t(key, vars){
+  let s = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang][key]) || key;
+  if (vars){
+    Object.keys(vars).forEach(k => { s = s.replace('{' + k + '}', vars[k]); });
+  }
+  return s;
+}
+
+function applyStaticI18n(){
+  document.documentElement.lang = currentLang;
+  document.title = t('docTitle');
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+}
+
+function setLanguage(lang){
+  currentLang = lang;
+  document.querySelectorAll('#langSwitch button').forEach(b => {
+    b.classList.toggle('active', b.dataset.lang === lang);
+  });
+  applyStaticI18n();
+  renderStatus();
+  renderLineCount();
+}
+
+document.getElementById('langSwitch').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-lang]');
+  if (btn) setLanguage(btn.dataset.lang);
+});
+
+applyStaticI18n(); // 初期表示（デフォルト言語）を適用
+
+/* ---- 状態管理 --------------------------------------------------------- */
+
+let currentFileText = null;
+let currentFileName = null;
+let lastOutput = '';
+let statusState = null;     // {key, vars, isErr} | null
+let lineCountState = null;  // {kept, total} | null
+
+const dropzone   = document.getElementById('dropzone');
+const fileInput  = document.getElementById('fileInput');
+const fnameEl    = document.getElementById('fname');
+const encodingSelect = document.getElementById('encodingSelect');
+const castListEl = document.getElementById('castList');
+const statusMsg  = document.getElementById('statusMsg');
+const runBtn     = document.getElementById('runBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const outputArea = document.getElementById('outputArea');
+const outputEmpty= document.getElementById('outputEmpty');
+const logArea    = document.getElementById('logArea');
+const logEmpty   = document.getElementById('logEmpty');
+const lineCountEl= document.getElementById('lineCount');
+const downloadBtn= document.getElementById('downloadBtn');
+const dlEncoding = document.getElementById('dlEncoding');
+const dlFilename = document.getElementById('dlFilename');
+
+function renderStatus(){
+  if (!statusState){
+    statusMsg.textContent = '';
+    statusMsg.classList.remove('err');
+    return;
+  }
+  statusMsg.textContent = t(statusState.key, statusState.vars);
+  statusMsg.classList.toggle('err', !!statusState.isErr);
+}
+
+function setStatus(key, vars, isErr){
+  statusState = key ? {key, vars, isErr} : null;
+  renderStatus();
+}
+
+function renderLineCount(){
+  lineCountEl.textContent = lineCountState
+    ? t('lineCount', lineCountState)
+    : '';
+}
+
+function setLineCount(kept, total){
+  lineCountState = {kept, total};
+  renderLineCount();
+}
+
+// ---- ドラッグ&ドロップ（1ファイルのみ）----
+dropzone.addEventListener('click', () => fileInput.click());
+['dragenter','dragover'].forEach(evt => {
+  dropzone.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.add('drag');
+  });
+});
+['dragleave','drop'].forEach(evt => {
+  dropzone.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.remove('drag');
+  });
+});
+dropzone.addEventListener('drop', e => {
+  const files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+  if (files.length > 1){
+    setStatus('statusMultiFile', null, true);
+  }
+  loadFile(files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file){
+  currentFileName = file.name;
+  fnameEl.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const buf = reader.result;
+      const decoder = new TextDecoder(encodingSelect.value);
+      currentFileText = decoder.decode(buf);
+      setStatus('statusLoaded', {name: file.name, kb: (buf.byteLength/1024).toFixed(1)});
+      dlFilename.value = file.name.replace(/\.[^.]+$/, '') + '_dialogue_only.txt';
+      runExtraction();
+    }catch(err){
+      setStatus('statusDecodeError', {msg: err.message}, true);
+    }
+  };
+  reader.onerror = () => setStatus('statusReadError', null, true);
+  reader.readAsArrayBuffer(file);
+}
+
+// エンコード変更時は、ファイルを読み込み直す
+encodingSelect.addEventListener('change', () => {
+  if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+});
+
+// ---- オプション変更 / 登場人物表 変更で自動再実行 ----
+['optSpeaker','optStage','optLineNum','optBlank','optDebug'].forEach(id => {
+  document.getElementById(id).addEventListener('change', runExtraction);
+});
+let castDebounce = null;
+castListEl.addEventListener('input', () => {
+  clearTimeout(castDebounce);
+  castDebounce = setTimeout(runExtraction, 400);
+});
+
+runBtn.addEventListener('click', runExtraction);
+clearBtn.addEventListener('click', () => {
+  currentFileText = null; currentFileName = null;
+  fileInput.value = '';
+  fnameEl.textContent = '';
+  castListEl.value = '';
+  outputArea.value = ''; outputArea.style.display = 'none'; outputEmpty.style.display = '';
+  logArea.innerHTML = ''; logArea.style.display = 'none'; logEmpty.style.display = '';
+  lineCountState = null;
+  renderLineCount();
+  setStatus(null);
+});
+
+function runExtraction(){
+  if (currentFileText === null){
+    return;
+  }
+  const opts = {
+    removeSpeaker: document.getElementById('optSpeaker').checked,
+    removeStage:   document.getElementById('optStage').checked,
+    removeLineNum: document.getElementById('optLineNum').checked,
+    removeBlank:   document.getElementById('optBlank').checked,
+    knownNames:    parseCastList(castListEl.value),
+  };
+  const debugOn = document.getElementById('optDebug').checked;
+
+  const extractor = new Extractor(opts);
+  const result = extractor.process(currentFileText);
+  lastOutput = result;
+
+  outputArea.value = result;
+  outputArea.style.display = result ? '' : 'none';
+  outputEmpty.style.display = result ? 'none' : '';
+
+  const keptCount = result ? result.split('\n').filter(l=>l.trim()!=='').length : 0;
+  setLineCount(keptCount, extractor.log.length);
+
+  if (debugOn){
+    renderLog(extractor.log);
+    logArea.style.display = '';
+    logEmpty.style.display = 'none';
+  } else {
+    logArea.innerHTML = '';
+    logArea.style.display = 'none';
+    logEmpty.style.display = '';
+  }
+}
+
+function renderLog(log){
+  const frag = document.createDocumentFragment();
+  log.forEach(entry => {
+    const row = document.createElement('div');
+    row.className = 'logline' + (entry.dropped ? ' dropped' : '');
+    const tag = document.createElement('span');
+    tag.className = 'lg-tag';
+    tag.textContent = '[' + entry.tag + ']';
+    const txt = document.createElement('span');
+    txt.className = 'lg-text';
+    txt.textContent = entry.rawLine;
+    row.appendChild(tag);
+    row.appendChild(txt);
+    frag.appendChild(row);
+  });
+  logArea.innerHTML = '';
+  logArea.appendChild(frag);
+}
+
+// ---- タブ切り替え ----
+document.querySelectorAll('.tabbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ---- ダウンロード ----
+downloadBtn.addEventListener('click', () => {
+  if (!lastOutput){
+    setStatus('statusNeedRun', null, true);
+    return;
+  }
+  const encoder = new TextEncoder(); // UTF-8 のみブラウザネイティブ対応
+  let bytes = encoder.encode(lastOutput);
+  if (dlEncoding.value === 'utf8bom'){
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const merged = new Uint8Array(bom.length + bytes.length);
+    merged.set(bom, 0);
+    merged.set(bytes, bom.length);
+    bytes = merged;
+  }
+  const blob = new Blob([bytes], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = dlFilename.value || 'dialogue_only.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
