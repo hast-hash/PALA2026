@@ -1,7 +1,8 @@
 # The Fall of Robespierre 文体分析:再検証のための手順書
 
 前回の一連の分析を通じて判明した落とし穴・改善点を反映した、再実行用の手順書。
-
+rolling_delta.html - 分析ツール
+extract_dialogue.html - テキスト整形ツール
 ---
 
 ## 0. 着手前に:今回新たに浮上した前提問題への対応
