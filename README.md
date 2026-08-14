@@ -2,6 +2,8 @@
 
 A step-by-step guide reflecting all pitfalls and improvements discovered during the previous round of analysis, intended for re-running the study.
 
+rolling_delta.html - analysis app
+extract_dialogue.html - for preparing texts
 ---
 
 ## 0. Before You Begin: An Unresolved Premise Raised During Analysis
